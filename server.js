@@ -1,58 +1,89 @@
 require('dotenv').config({ path: __dirname + '/.env', override: true });
-console.log("ENV LOADED:", process.env.MONGODB_URI);
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "https://car-rent-backend-production-fb17.up.railway.app"
-    ],
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true
-  })
-);
+// ─── CORS ────────────────────────────────────────────────────────────────────
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  process.env.FRONTEND_URL,
+  "https://car-rent-backend-production-fb17.up.railway.app"
+].filter(Boolean);
 
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}));
 app.options("*", cors());
 
-app.use(express.json());
+// ─── MIDDLEWARE ───────────────────────────────────────────────────────────────
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.use(express.json());
-app.use('/uploads', express.static('uploads')); // Serve uploaded files
-
-
-
-// Robust Database Connection
+// ─── DATABASE ─────────────────────────────────────────────────────────────────
 const connectDB = async () => {
-    const uris = [
-        process.env.MONGODB_URI
-    ].filter(Boolean); // Create a list of URIs to try
-
-    for (const uri of uris) {
-        try {
-            console.log(`Attempting to connect to: ${uri}`);
-            await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
-            console.log(`✅ MongoDB Connected Successfully to: ${uri}`);
-            return; // Connection successful, exit function
-        } catch (err) {
-            console.error(`❌ Failed to connect to ${uri}: ${err.message}`);
-        }
-    }
-    console.error('🔥 ALL CONNECTION ATTEMPTS FAILED. Is MongoDB running?');
-    // We do not exit process so the server keeps running and maybe user starts DB later
+  try {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) throw new Error("MONGODB_URI is not defined in .env");
+    await mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 8000,
+      socketTimeoutMS: 45000,
+    });
+    console.log("✅ MongoDB Connected Successfully");
+  } catch (err) {
+    console.error("❌ MongoDB Connection Failed:", err.message);
+    // Retry after 5 seconds instead of crashing
+    setTimeout(connectDB, 5000);
+  }
 };
+
+mongoose.connection.on("disconnected", () => {
+  console.warn("⚠️  MongoDB disconnected. Reconnecting...");
+  setTimeout(connectDB, 5000);
+});
 
 connectDB();
 
-// Routes
+// ─── ROUTES ───────────────────────────────────────────────────────────────────
 app.use('/api', require('./routes/cars'));
 
+// Health check
+app.get('/health', (req, res) => {
+  res.json({
+    status: "ok",
+    db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ message: "Route not found" });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error("Server Error:", err.message);
+  res.status(500).json({ message: err.message || "Internal server error" });
+});
+
+// ─── START ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
