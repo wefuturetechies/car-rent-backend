@@ -180,12 +180,53 @@ router.delete("/cars/:id", async (req, res) => {
 });
 
 /* =========================================================
+   TOGGLE CAR STATUS — PUT /api/cars/:id/status
+   Toggles between Active ↔ Maintenance
+========================================================= */
+router.put("/cars/:id/status", async (req, res) => {
+  try {
+    const car = await Car.findById(req.params.id);
+    if (!car) return res.status(404).json({ message: "Car not found" });
+
+    // Toggle between Active and Maintenance
+    car.status = car.status === "Active" ? "Maintenance" : "Active";
+    await car.save();
+
+    res.json({ message: `Car marked as ${car.status}`, status: car.status, car });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/* =========================================================
+   TOGGLE BOOKING STATUS — PUT /api/cars/:carId/bookings/:bookingId/toggle
+   Toggles booking between Confirmed ↔ Cancelled
+========================================================= */
+router.put("/cars/:carId/bookings/:bookingId/toggle", async (req, res) => {
+  try {
+    const car = await Car.findById(req.params.carId);
+    if (!car) return res.status(404).json({ message: "Car not found" });
+
+    const booking = car.bookings.id(req.params.bookingId);
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+
+    booking.status = booking.status === "Confirmed" ? "Cancelled" : "Confirmed";
+    await car.save();
+
+    res.json({ message: `Booking ${booking.status}`, booking });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/* =========================================================
    BOOK CAR — POST /api/book/:carId
    Uses MongoDB-level conflict check, then atomic save
+   pricePerDay can be passed from request body (overrides car price)
 ========================================================= */
 router.post("/book/:carId", async (req, res) => {
   try {
-    const { customerName, phone, startDate, endDate } = req.body;
+    const { customerName, phone, startDate, endDate, pricePerDay: bodyPrice } = req.body;
 
     if (!customerName) {
       return res.status(400).json({ message: "Customer name is required" });
@@ -229,7 +270,8 @@ router.post("/book/:carId", async (req, res) => {
     }
 
     const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-    const totalAmount = days * availableCar.pricePerDay;
+    const effectivePrice = bodyPrice ? parseFloat(bodyPrice) : (availableCar.pricePerDay || 0);
+    const totalAmount = days * effectivePrice;
 
     availableCar.bookings.push({
       customerName: customerName.trim(),
