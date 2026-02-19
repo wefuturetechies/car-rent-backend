@@ -37,7 +37,7 @@ const connectDB = async () => {
 connectDB();
 
 // Routes
-app.use('/api/cars', require('./routes/cars'));
+app.use('/api', require('./routes/cars'));
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
