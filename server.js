@@ -17,10 +17,7 @@ app.use('/uploads', express.static('uploads')); // Serve uploaded files
 // Robust Database Connection
 const connectDB = async () => {
     const uris = [
-        process.env.MONGODB_URI,
-        'mongodb://127.0.0.1:27017/car_fleet',
-        'mongodb://localhost:27017/car_fleet',
-        'mongodb://0.0.0.0:27017/car_fleet'
+        process.env.MONGODB_URI
     ].filter(Boolean); // Create a list of URIs to try
 
     for (const uri of uris) {
